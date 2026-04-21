@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mekhi & BAC - POS System v4</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.1.1/tesseract.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; }
+        .container { width: 100%; max-width: 420px; margin: 0 auto; padding: 0.5rem; }
+        .header { background: linear-gradient(135deg, #378add, #e8e8e8); border-radius: 12px; padding: 1rem; margin-bottom: 1rem; border: 0.5px solid #ddd; }
+        .header h1 { font-size: 18px; font-weight: 500; color: #0c447c; margin-bottom: 0.3rem; }
+        .header p { font-size: 12px; color: #666; }
+        .tabs { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.4rem; margin-bottom: 1rem; }
+        .tab-btn { padding: 0.7rem 0.5rem; border: 0.5px solid #ddd; border-radius: 8px; background: white; cursor: pointer; font-size: 12px; font-weight: 500; transition: all 0.2s; color: #333; }
+        .tab-btn.active { background: #378add; color: white; border-color: #378add; }
+        .store-section { display: none; }
+        .store-section.active { display: block; }
+        .camera-section { background: #f8f8f8; border-radius: 12px; padding: 1rem; margin-bottom: 1rem; border: 0.5px solid #ddd; }
+        .preview-container { position: relative; background: white; border: 0.5px dashed #ddd; border-radius: 8px; overflow: hidden; margin-bottom: 0.8rem; height: 200px; }
+        .preview-img, .video-stream { width: 100%; height: 100%; object-fit: cover; }
+        .camera-controls { display: flex; gap: 0.5rem; margin-bottom: 0.8rem; }
+        .camera-controls button { flex: 1; padding: 0.6rem; font-size: 12px; }
+        .loading-spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid #ddd; border-top: 2px solid #378add; border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 0.5rem; vertical-align: middle; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .products-detected { background: #f8f8f8; border-radius: 12px; padding: 1rem; margin-bottom: 1rem; border: 0.5px solid #ddd; }
+        .products-detected h3 { font-size: 13px; font-weight: 500; color: #333; margin-bottom: 0.8rem; }
+        .product-row { background: white; padding: 0.8rem; border-radius: 8px; margin-bottom: 0.6rem; border: 0.5px solid #ddd; display: grid; grid-template-columns: 1fr 0.7fr 0.7fr 0.5fr; gap: 0.6rem; align-items: center; }
+        .product-row input { width: 100%; padding: 0.4rem; border: 0.5px solid #ddd; border-radius: 4px; font-size: 12px; }
+        .product-row button { padding: 0.4rem 0.6rem; font-size: 11px; }
+        .form-group { margin-bottom: 0.8rem; }
+        label { display: block; font-size: 12px; color: #666; margin-bottom: 0.3rem; font-weight: 500; }
+        input[type="text"], input[type="number"] { width: 100%; padding: 0.6rem; border: 0.5px solid #ddd; border-radius: 8px; font-size: 14px; color: #333; background: white; }
+        input:focus { outline: none; border-color: #378add; box-shadow: 0 0 0 2px rgba(55, 138, 221, 0.1); }
+        .btn-primary { width: 100%; padding: 0.8rem; background: #378add; color: white; border: none; border-radius: 8px; font-weight: 500; cursor: pointer; font-size: 14px; transition: all 0.2s; }
+        .btn-primary:hover { opacity: 0.9; }
+        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-secondary { padding: 0.6rem 0.8rem; background: #f8f8f8; color: #333; border: 0.5px solid #ddd; border-radius: 8px; font-size: 12px; cursor: pointer; transition: all 0.2s; }
+        .btn-secondary:hover { background: #f0f0f0; }
+        .btn-danger { background: #e24b4a; color: white; border: none; }
+        .btn-success { background: #639922; color: white; border: none; }
+        .btn-small { padding: 0.4rem 0.6rem; font-size: 11px; }
+        .actions { display: flex; gap: 0.6rem; margin-bottom: 1rem; }
+        .actions button { flex: 1; }
+        .sales-list { max-height: 300px; overflow-y: auto; margin-bottom: 1rem; }
+        .sale-item { background: white; padding: 0.8rem; border-radius: 8px; margin-bottom: 0.6rem; border: 0.5px solid #ddd; }
+        .sale-item-header { display: flex; justify-content: space-between; margin-bottom: 0.4rem; }
+        .sale-client { font-weight: 500; color: #333; font-size: 13px; }
+        .sale-total { font-weight: 500; color: #378add; font-size: 13px; }
+        .sale-products { font-size: 11px; color: #666; }
+        .sale-actions { display: flex; gap: 0.4rem; margin-top: 0.4rem; }
+        .alert { padding: 0.8rem; border-radius: 8px; font-size: 12px; margin-bottom: 1rem; }
+        .alert-success { background: #e8f5e9; color: #27500a; border: 0.5px solid #c8e6c9; }
+        .alert-error { background: #fcebeb; color: #791f1f; border: 0.5px solid #f7c1c1; }
+        .alert-info { background: #e6f1fb; color: #042c53; border: 0.5px solid #b5d4f4; }
+        .summary { background: #f8f8f8; border-radius: 12px; padding: 1rem; margin-bottom: 1rem; border: 0.5px solid #ddd; }
+        .summary-row { display: flex; justify-content: space-between; margin-bottom: 0.6rem; font-size: 13px; }
+        .summary-row.total { border-top: 0.5px solid #ddd; padding-top: 0.8rem; font-weight: 500; font-size: 15px; }
+        .summary-label { color: #666; }
+        .summary-value { font-weight: 500; color: #333; }
+        .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border-width: 0; }
+    </style>
+</head>
+<body>
+    <div class="sr-only"><h2>Sistema POS Mekhi & BAC con OCR inteligente y reportes diarios</h2></div>
+    <div class="container">
+        <div class="header">
+            <h1>Mekhi & BAC POS</h1>
+            <p>Control de ventas • OCR inteligente • Reportes diarios</p>
+        </div>
+
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchStore('mekhi')">Mekhi</button>
+            <button class="tab-btn" onclick="switchStore('bac')">BAC</button>
+            <button class="tab-btn" onclick="switchStore('reports')">Reportes</button>
+        </div>
+
+        <div id="mekhi" class="store-section active">
+            <div class="camera-section">
+                <label style="margin-bottom: 0.8rem; display: block; font-weight: 500;">Foto de la comanda</label>
+                <div class="preview-container" id="previewMekhi">
+                    <p style="padding: 2rem 1rem; text-align: center; color: #999; font-size: 12px;">Sin imagen</p>
+                </div>
+                <div class="camera-controls">
+                    <button class="btn-secondary" onclick="openCamera('mekhi')" style="flex: 1;">Cámara</button>
+                    <button class="btn-secondary" onclick="openFilePicker('mekhi')" style="flex: 1;">Galería</button>
+                </div>
+                <input type="file" id="imageMekhi" accept="image/*" onchange="handleImage('mekhi')" style="display: none;">
+                <video id="cameraMekhi" class="video-stream" style="display: none;"></video>
+                <canvas id="canvasMekhi" style="display: none;"></canvas>
+            </div>
+
+            <div id="ocrStatusMekhi"></div>
+            <div id="alertMekhi"></div>
+            <div id="productsDetectedMekhi" style="display: none;"></div>
+
+            <div class="form-group">
+                <label>Cliente</label>
+                <input type="text" id="clienteMekhi" placeholder="Nombre del cliente">
+            </div>
+
+            <div class="actions" style="margin-bottom: 1rem;">
+                <button class="btn-primary" onclick="saveSale('mekhi')">Guardar venta</button>
+            </div>
+
+            <div class="sales-list" id="salesListMekhi"></div>
+            <div class="summary" id="summaryMekhi"></div>
+        </div>
+
+        <div id="bac" class="store-section">
+            <div class="camera-section">
+                <label style="margin-bottom: 0.8rem; display: block; font-weight: 500;">Foto de la comanda</label>
+                <div class="preview-container" id="previewBac">
+                    <p style="padding: 2rem 1rem; text-align: center; color: #999; font-size: 12px;">Sin imagen</p>
+                </div>
+                <div class="camera-controls">
+                    <button class="btn-secondary" onclick="openCamera('bac')" style="flex: 1;">Cámara</button>
+                    <button class="btn-secondary" onclick="openFilePicker('bac')" style="flex: 1;">Galería</button>
+                </div>
+                <input type="file" id="imageBac" accept="image/*" onchange="handleImage('bac')" style="display: none;">
+                <video id="cameraBac" class="video-stream" style="display: none;"></video>
+                <canvas id="canvasBac" style="display: none;"></canvas>
+            </div>
+
+            <div id="ocrStatusBac"></div>
+            <div id="alertBac"></div>
+            <div id="productsDetectedBac" style="display: none;"></div>
+
+            <div class="form-group">
+                <label>Cliente</label>
+                <input type="text" id="clienteBac" placeholder="Nombre del cliente">
+            </div>
+
+            <div class="actions" style="margin-bottom: 1rem;">
+                <button class="btn-primary" onclick="saveSale('bac')">Guardar venta</button>
+            </div>
+
+            <div class="sales-list" id="salesListBac"></div>
+            <div class="summary" id="summaryBac"></div>
+        </div>
+
+        <div id="reports" class="store-section">
+            <div class="summary">
+                <h3 style="font-size: 14px; font-weight: 500; margin-bottom: 1rem; color: #333;">Resumen del día</h3>
+                <div id="reportsSummary"></div>
+            </div>
+
+            <div class="form-group">
+                <label>Descripción del cierre (opcional)</label>
+                <input type="text" id="closingNotes" placeholder="Ej: Cambio de turno, buen día, etc.">
+            </div>
+
+            <button class="btn-primary btn-success" onclick="generateDailyReport()" style="margin-bottom: 0.8rem;">Generar informe diario</button>
+            <button class="btn-secondary" style="width: 100%; background: #e24b4a; color: white; border: none;" onclick="clearAllData()">Limpiar datos</button>
+        </div>
+    </div>
+
+    <script>
+        let appState = {
+            stores: {
+                mekhi: { name: 'Mekhi Restó', sales: [], currentProducts: [], currentCliente: '' },
+                bac: { name: 'BAC', sales: [], currentProducts: [], currentCliente: '' }
+            },
+            cameraActive: { mekhi: null, bac: null }
+        };
+
+        function openCamera(storeId) {
+            const videoId = `camera${storeId === 'mekhi' ? 'Mekhi' : 'Bac'}`;
+            const video = document.getElementById(videoId);
+            const suffix = storeId === 'mekhi' ? 'Mekhi' : 'Bac';
+
+            if (appState.cameraActive[storeId]) {
+                appState.cameraActive[storeId].getTracks().forEach(track => track.stop());
+                video.style.display = 'none';
+                appState.cameraActive[storeId] = null;
+                return;
+            }
+
+            showAlert(`alert${suffix}`, '<span class="loading-spinner"></span>Solicitando permiso de cámara...', 'info');
+
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+                .then(stream => {
+                    appState.cameraActive[storeId] = stream;
+                    video.srcObject = stream;
+                    video.style.display = 'block';
+                    document.getElementById(`preview${suffix}`).innerHTML = '';
+                    document.getElementById(`preview${suffix}`).appendChild(video);
+                    
+                    showAlert(`alert${suffix}`, 'Cámara abierta - en 2 segundos captura', 'info');
+                    setTimeout(() => captureFrame(storeId), 2000);
+                })
+                .catch(err => {
+                    const errorMsg = err.name === 'NotAllowedError' 
+                        ? 'Permiso NEGADO. Dale permiso a cámara. O usa [Galería] para importar fotos.'
+                        : 'Error: Cámara no disponible. Usa [Galería] para importar fotos.';
+                    showAlert(`alert${suffix}`, errorMsg, 'error');
+                });
+        }
+
+        function captureFrame(storeId) {
+            const suffix = storeId === 'mekhi' ? 'Mekhi' : 'Bac';
+            const video = document.getElementById(`camera${suffix}`);
+            const canvas = document.getElementById(`canvas${suffix}`);
+            const ctx = canvas.getContext('2d');
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0);
+
+            const imageData = canvas.toDataURL('image/jpeg');
+            
+            if (appState.cameraActive[storeId]) {
+                appState.cameraActive[storeId].getTracks().forEach(track => track.stop());
+                video.style.display = 'none';
+                appState.cameraActive[storeId] = null;
+            }
+
+            handleImageData(imageData, storeId);
+        }
+
+        function openFilePicker(storeId) {
+            document.getElementById(`image${storeId === 'mekhi' ? 'Mekhi' : 'Bac'}`).click();
+        }
+
+        function handleImage(storeId) {
+            const fileInput = document.getElementById(`image${storeId === 'mekhi' ? 'Mekhi' : 'Bac'}`);
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => handleImageData(e.target.result, storeId);
+            reader.readAsDataURL(file);
+        }
+
+        function handleImageData(imageData, storeId) {
+            const suffix = storeId === 'mekhi' ? 'Mekhi' : 'Bac';
+            document.getElementById(`preview${suffix}`).innerHTML = `<img src="${imageData}" class="preview-img" alt="comanda">`;
+            performOCR(imageData, storeId);
+        }
+
+        async function performOCR(imageData, storeId) {
+            const suffix = storeId === 'mekhi' ? 'Mekhi' : 'Bac';
+            const statusDiv = document.getElementById(`ocrStatus${suffix}`);
+            const productsDiv = document.getElementById(`productsDetected${suffix}`);
+            
+            statusDiv.innerHTML = '<div class="alert alert-info"><span class="loading-spinner"></span>Analizando comanda...</div>';
+
+            try {
+                const result = await Tesseract.recognize(imageData, 'es');
+                const text = result.data.text;
+                
+                const products = extractProducts(text);
+                appState.stores[storeId].currentProducts = products;
+
+                if (products.length > 0) {
+                    displayProducts(storeId, products);
+                    statusDiv.innerHTML = '<div class="alert alert-success">✓ Productos detectados</div>';
+                } else {
+                    statusDiv.innerHTML = '<div class="alert alert-error">No se encontraron productos. Ingresa manualmente.</div>';
+                    productsDiv.style.display = 'none';
+                }
+            } catch (error) {
+                statusDiv.innerHTML = '<div class="alert alert-error">Error al leer</div>';
+            }
+        }
+
+        function extractProducts(text) {
+            const lines = text.split('\n');
+            const products = [];
+            const patterns = [
+                /^([A-Z\s]+?)\s*\$?\s*(\d+[.,]\d{1,3})\s*x?\s*(\d+)?\s*\$?\s*([\d.,]+)?/i,
+                /([A-Z][A-Z\s]*?)\s+\$?([\d,]+)\s+(\d+)\s*\$?([\d,]+)?/i
+            ];
+
+            lines.forEach(line => {
+                if (line.trim().length < 3) return;
+                
+                for (let pattern of patterns) {
+                    const match = line.match(pattern);
+                    if (match) {
+                        const name = match[1].trim();
+                        const price = parseFloat((match[2] || '0').replace(',', '.'));
+                        const qty = parseInt(match[3] || '1');
+                        const subtotal = parseFloat((match[4] || (price * qty)).toString().replace(',', '.'));
+
+                        if (name && price > 0) {
+                            products.push({
+                                name: name.charAt(0).toUpperCase() + name.slice(1).toLowerCase(),
+                                price: Math.round(price * 100) / 100,
+                                qty: qty || 1,
+                                subtotal: Math.round(subtotal * 100) / 100
+                            });
+                            break;
+                        }
+                    }
+                }
+            });
+
+            return products.slice(0, 15);
+        }
+
+        function displayProducts(storeId, products) {
+            const suffix = storeId === 'mekhi' ? 'Mekhi' : 'Bac';
+            const productsDiv = document.getElementById(`productsDetected${suffix}`);
+            
+            let html = '<div class="products-detected"><h3>Productos detectados - Editar si es necesario:</h3>';
+            
+            products.forEach((p, i) => {
+                html += `
+                    <div class="product-row">
+                        <input type="text" value="${p.name}" onchange="appState.stores['${storeId}'].currentProducts[${i}].name = this.value" placeholder="Producto">
+                        <input type="number" value="${p.qty}" onchange="appState.stores['${storeId}'].currentProducts[${i}].qty = parseInt(this.value)" min="1">
+                        <input type="number" value="${p.price}" onchange="appState.stores['${storeId}'].currentProducts[${i}].price = parseFloat(this.value)" step="0.01" min="0">
+                        <button class="btn-secondary btn-danger" onclick="appState.stores['${storeId}'].currentProducts.splice(${i}, 1); displayProducts('${storeId}', appState.stores['${storeId}'].currentProducts);">×</button>
+                    </div>
+                `;
+            });
+
+            html += '<button class="btn-secondary" style="width: 100%; margin-top: 0.8rem;" onclick="addProductRow(\'' + storeId + '\')">+ Agregar</button></div>';
+            
+            productsDiv.innerHTML = html;
+            productsDiv.style.display = 'block';
+        }
+
+        function addProductRow(storeId) {
+            appState.stores[storeId].currentProducts.push({
+                name: '',
+                qty: 1,
+                price: 0,
+                subtotal: 0
+            });
+            displayProducts(storeId, appState.stores[storeId].currentProducts);
+        }
+
+        function saveSale(storeId) {
+            const suffix = storeId === 'mekhi' ? 'Mekhi' : 'Bac';
+            const cliente = document.getElementById(`cliente${suffix}`).value.trim() || 'Sin nombre';
+            const products = appState.stores[storeId].currentProducts;
+
+            if (products.length === 0) {
+                showAlert(`alert${suffix}`, 'Agrega productos a la venta', 'error');
+                return;
+            }
+
+            const total = Math.round(products.reduce((sum, p) => sum + (p.qty * p.price), 0) * 100) / 100;
+            
+            const sale = {
+                id: `VENTA-${Date.now()}`,
+                date: new Date().toLocaleString('es-AR'),
+                cliente,
+                products,
+                total
+            };
+
+            appState.stores[storeId].sales.push(sale);
+            appState.stores[storeId].currentProducts = [];
+            document.getElementById(`cliente${suffix}`).value = '';
+            document.getElementById(`productsDetected${suffix}`).style.display = 'none';
+            document.getElementById(`preview${suffix}`).innerHTML = '<p style="padding: 2rem 1rem; text-align: center; color: #999; font-size: 12px;">Sin imagen</p>';
+
+            showAlert(`alert${suffix}`, '✓ Venta guardada', 'success');
+            updateSalesList(storeId);
+            updateSummary(storeId);
+        }
+
+        function updateSalesList(storeId) {
+            const suffix = storeId === 'mekhi' ? 'Mekhi' : 'Bac';
+            const listDiv = document.getElementById(`salesList${suffix}`);
+            const sales = appState.stores[storeId].sales;
+
+            listDiv.innerHTML = sales.map((sale, i) => `
+                <div class="sale-item">
+                    <div class="sale-item-header">
+                        <div>
+                            <div class="sale-client">${sale.cliente}</div>
+                            <div class="sale-products">${sale.date}</div>
+                        </div>
+                        <button class="btn-secondary btn-danger btn-small" onclick="appState.stores['${storeId}'].sales.splice(${i}, 1); updateSalesList('${storeId}'); updateSummary('${storeId}');">×</button>
+                    </div>
+                    <div class="sale-products" style="margin: 0.4rem 0;">
+                        ${sale.products.map(p => `${p.qty}x ${p.name} @ $${p.price}`).join(' • ')}
+                    </div>
+                    <div class="sale-total">Total: $${sale.total.toFixed(2)}</div>
+                </div>
+            `).join('');
+        }
+
+        function updateSummary(storeId) {
+            const suffix = storeId === 'mekhi' ? 'Mekhi' : 'Bac';
+            const sales = appState.stores[storeId].sales;
+            const totalSales = Math.round(sales.reduce((sum, s) => sum + s.total, 0) * 100) / 100;
+            const totalItems = sales.reduce((sum, s) => sum + s.products.reduce((psum, p) => psum + p.qty, 0), 0);
+
+            document.getElementById(`summary${suffix}`).innerHTML = `
+                <div class="summary-row">
+                    <span class="summary-label">Ventas registradas:</span>
+                    <span class="summary-value">${sales.length}</span>
+                </div>
+                <div class="summary-row">
+                    <span class="summary-label">Productos vendidos:</span>
+                    <span class="summary-value">${totalItems}</span>
+                </div>
+                <div class="summary-row total">
+                    <span class="summary-label">Total del día:</span>
+                    <span class="summary-value">$${totalSales.toFixed(2)}</span>
+                </div>
+            `;
+        }
+
+        function switchStore(storeName) {
+            document.querySelectorAll('.store-section').forEach(el => el.classList.remove('active'));
+            document.getElementById(storeName).classList.add('active');
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            updateReportsSummary();
+        }
+
+        function updateReportsSummary() {
+            const mekhi = appState.stores.mekhi;
+            const bac = appState.stores.bac;
+            const mTotal = Math.round(mekhi.sales.reduce((sum, s) => sum + s.total, 0) * 100) / 100;
+            const bTotal = Math.round(bac.sales.reduce((sum, s) => sum + s.total, 0) * 100) / 100;
+
+            document.getElementById('reportsSummary').innerHTML = `
+                <div class="summary-row">
+                    <span class="summary-label">Mekhi Restó - Ventas:</span>
+                    <span class="summary-value">${mekhi.sales.length}</span>
+                </div>
+                <div class="summary-row">
+                    <span class="summary-label">Mekhi Restó - Total:</span>
+                    <span class="summary-value">$${mTotal.toFixed(2)}</span>
+                </div>
+                <div class="summary-row">
+                    <span class="summary-label">BAC - Ventas:</span>
+                    <span class="summary-value">${bac.sales.length}</span>
+                </div>
+                <div class="summary-row">
+                    <span class="summary-label">BAC - Total:</span>
+                    <span class="summary-value">$${bTotal.toFixed(2)}</span>
+                </div>
+                <div class="summary-row total">
+                    <span class="summary-label">TOTAL GENERAL:</span>
+                    <span class="summary-value">$${(mTotal + bTotal).toFixed(2)}</span>
+                </div>
+            `;
+        }
+
+        function generateDailyReport() {
+            const mekhi = appState.stores.mekhi;
+            const bac = appState.stores.bac;
+
+            if (mekhi.sales.length === 0 && bac.sales.length === 0) {
+                alert('No hay ventas para reportar');
+                return;
+            }
+
+            const wb = XLSX.utils.book_new();
+
+            const allSalesData = [
+                ['REGISTRO DE VENTAS'],
+                ['Fecha', 'Cliente', 'Punto Venta', 'Cantidad', 'Producto', 'Subtotal']
+            ];
+
+            [...mekhi.sales, ...bac.sales].forEach(sale => {
+                const pointName = mekhi.sales.includes(sale) ? 'Mekhi Restó' : 'BAC';
+                sale.products.forEach(product => {
+                    allSalesData.push([
+                        sale.date,
+                        sale.cliente,
+                        pointName,
+                        product.qty,
+                        product.name,
+                        (product.qty * product.price).toFixed(2)
+                    ]);
+                });
+            });
+
+            const wsSales = XLSX.utils.aoa_to_sheet(allSalesData);
+            XLSX.utils.book_append_sheet(wb, wsSales, 'VENTAS');
+
+            const mekbiResume = ['MEKHI RESTÓ - RESUMEN DEL DÍA', []];
+            const mekbiProducts = {};
+            
+            mekhi.sales.forEach(sale => {
+                sale.products.forEach(p => {
+                    if (!mekbiProducts[p.name]) mekbiProducts[p.name] = { qty: 0, total: 0 };
+                    mekbiProducts[p.name].qty += p.qty;
+                    mekbiProducts[p.name].total += p.qty * p.price;
+                });
+            });
+
+            mekbiResume.push(['Producto', 'Cantidad', 'Valor Total']);
+            let mekbiTotal = 0;
+            Object.entries(mekbiProducts).forEach(([product, data]) => {
+                mekbiResume.push([product, data.qty, data.total.toFixed(2)]);
+                mekbiTotal += data.total;
+            });
+            mekbiResume.push(['', '', '']);
+            mekbiResume.push(['TOTAL MEKHI RESTÓ', '', mekbiTotal.toFixed(2)]);
+
+            const wsMekhi = XLSX.utils.aoa_to_sheet(mekbiResume);
+            XLSX.utils.book_append_sheet(wb, wsMekhi, 'MEKHI');
+
+            const bacResume = ['BAC - RESUMEN DEL DÍA', []];
+            const bacProducts = {};
+            
+            bac.sales.forEach(sale => {
+                sale.products.forEach(p => {
+                    if (!bacProducts[p.name]) bacProducts[p.name] = { qty: 0, total: 0 };
+                    bacProducts[p.name].qty += p.qty;
+                    bacProducts[p.name].total += p.qty * p.price;
+                });
+            });
+
+            bacResume.push(['Producto', 'Cantidad', 'Valor Total']);
+            let bacTotal = 0;
+            Object.entries(bacProducts).forEach(([product, data]) => {
+                bacResume.push([product, data.qty, data.total.toFixed(2)]);
+                bacTotal += data.total;
+            });
+            bacResume.push(['', '', '']);
+            bacResume.push(['TOTAL BAC', '', bacTotal.toFixed(2)]);
+
+            const wsBac = XLSX.utils.aoa_to_sheet(bacResume);
+            XLSX.utils.book_append_sheet(wb, wsBac, 'BAC');
+
+            XLSX.writeFile(wb, `INFORME_DIARIO_${new Date().toISOString().split('T')[0]}.xlsx`);
+            
+            alert('✓ Informe descargado');
+        }
+
+        function showAlert(elemId, msg, type) {
+            const elem = document.getElementById(elemId);
+            elem.innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
+            setTimeout(() => elem.innerHTML = '', 3000);
+        }
+
+        function clearAllData() {
+            if (confirm('¿Eliminar TODOS los registros?')) {
+                appState.stores.mekhi.sales = [];
+                appState.stores.bac.sales = [];
+                updateSummary('mekhi');
+                updateSummary('bac');
+                updateReportsSummary();
+            }
+        }
+
+        updateReportsSummary();
+    </script>
+</body>
+</html>
