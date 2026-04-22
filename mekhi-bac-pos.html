@@ -245,60 +245,113 @@
             const statusDiv = document.getElementById(`ocrStatus${suffix}`);
             const productsDiv = document.getElementById(`productsDetected${suffix}`);
             
-            statusDiv.innerHTML = '<div class="alert alert-info"><span class="loading-spinner"></span>Analizando comanda...</div>';
+            statusDiv.innerHTML = '<div class="alert alert-info"><span class="loading-spinner"></span>Analizando comanda (puede tomar 5-10 segundos)...</div>';
 
             try {
-                const result = await Tesseract.recognize(imageData, 'es');
+                // Configurar Tesseract para mejor OCR
+                const result = await Tesseract.recognize(
+                    imageData, 
+                    'spa',
+                    {
+                        logger: m => {
+                            if (m.status === 'recognizing') {
+                                const progress = Math.round(m.progress * 100);
+                                statusDiv.innerHTML = `<div class="alert alert-info"><span class="loading-spinner"></span>Analizando... ${progress}%</div>`;
+                            }
+                        }
+                    }
+                );
+                
                 const text = result.data.text;
+                console.log('OCR Text:', text); // Para debug
                 
                 const products = extractProducts(text);
                 appState.stores[storeId].currentProducts = products;
 
                 if (products.length > 0) {
                     displayProducts(storeId, products);
-                    statusDiv.innerHTML = '<div class="alert alert-success">✓ Productos detectados</div>';
+                    statusDiv.innerHTML = '<div class="alert alert-success">✓ Se detectaron ' + products.length + ' productos. Revisa y edita si necesario.</div>';
                 } else {
-                    statusDiv.innerHTML = '<div class="alert alert-error">No se encontraron productos. Ingresa manualmente.</div>';
-                    productsDiv.style.display = 'none';
+                    statusDiv.innerHTML = '<div class="alert alert-error">❌ No se detectaron productos. Puedes ingresarlos manualmente con "+ Agregar producto"</div>';
+                    appState.stores[storeId].currentProducts = [];
+                    displayProducts(storeId, []);
+                    productsDiv.style.display = 'block';
                 }
             } catch (error) {
-                statusDiv.innerHTML = '<div class="alert alert-error">Error al leer</div>';
+                console.error('OCR Error:', error);
+                statusDiv.innerHTML = '<div class="alert alert-error">❌ Error al procesar la imagen. Intenta con una foto más clara o ingresa manualmente.</div>';
+                appState.stores[storeId].currentProducts = [];
+                displayProducts(storeId, []);
+                productsDiv.style.display = 'block';
             }
         }
 
         function extractProducts(text) {
-            const lines = text.split('\n');
+            const lines = text.split('\n').filter(l => l.trim());
             const products = [];
-            const patterns = [
-                /^([A-Z\s]+?)\s*\$?\s*(\d+[.,]\d{1,3})\s*x?\s*(\d+)?\s*\$?\s*([\d.,]+)?/i,
-                /([A-Z][A-Z\s]*?)\s+\$?([\d,]+)\s+(\d+)\s*\$?([\d,]+)?/i
+            
+            // Palabras clave de encabezados y secciones a ignorar
+            const ignorePatterns = [
+                /^(entradas|comidas|dulces|pan|bebidas|postres|precio|cantidad|total|comanda|fecha|cliente|resumen|recibo|carrito|punto)/i,
+                /^\s*(producto|item|article|articulo)\s*$/i,
+                /^\s*-+\s*$/,
+                /^\s*\|*\s*$/,
             ];
+            
+            // Patrón principal: PRODUCTO | PRECIO | CANTIDAD | TOTAL
+            // O: PRODUCTO $PRECIO CANTIDAD TOTAL
+            const mainPattern = /^([A-Z][A-Z\s\á\é\í\ó\ú\ñ\-\.]*?)\s*\|?\s*\$?([\d.,]+)\s*\|?\s*(\d+)\s*\|?\s*\$?([\d.,]+)/i;
+            
+            // Patrón alternativo: PRODUCTO $PRECIO (sin cantidad, asume 1)
+            const altPattern = /^([A-Z][A-Z\s\á\é\í\ó\ú\ñ\-\.]*?)\s+\$?([\d.,]+)$/i;
 
-            lines.forEach(line => {
-                if (line.trim().length < 3) return;
+            lines.forEach((line, index) => {
+                const trimmed = line.trim();
                 
-                for (let pattern of patterns) {
-                    const match = line.match(pattern);
-                    if (match) {
-                        const name = match[1].trim();
-                        const price = parseFloat((match[2] || '0').replace(',', '.'));
-                        const qty = parseInt(match[3] || '1');
-                        const subtotal = parseFloat((match[4] || (price * qty)).toString().replace(',', '.'));
+                // Filtros
+                if (trimmed.length < 3) return;
+                if (ignorePatterns.some(p => p.test(trimmed))) return;
+                
+                // Intenta patrón principal
+                let match = trimmed.match(mainPattern);
+                if (match) {
+                    const name = match[1].trim().replace(/\s+/g, ' ');
+                    const priceStr = (match[2] || '0').replace(/[.,]/g, m => m === ',' ? '.' : m);
+                    const price = parseFloat(priceStr);
+                    const qty = parseInt(match[3] || '1') || 1;
+                    const totalStr = (match[4] || (price * qty).toFixed(2)).replace(/[.,]/g, m => m === ',' ? '.' : m);
+                    const total = parseFloat(totalStr);
 
-                        if (name && price > 0) {
-                            products.push({
-                                name: name.charAt(0).toUpperCase() + name.slice(1).toLowerCase(),
-                                price: Math.round(price * 100) / 100,
-                                qty: qty || 1,
-                                subtotal: Math.round(subtotal * 100) / 100
-                            });
-                            break;
-                        }
+                    if (name.length > 2 && price > 0 && !products.some(p => p.name.toLowerCase() === name.toLowerCase())) {
+                        products.push({
+                            name: name.charAt(0).toUpperCase() + name.slice(1).toLowerCase(),
+                            price: Math.round(price * 100) / 100,
+                            qty: qty,
+                            subtotal: Math.round(total * 100) / 100
+                        });
+                    }
+                    return;
+                }
+                
+                // Intenta patrón alternativo
+                match = trimmed.match(altPattern);
+                if (match) {
+                    const name = match[1].trim().replace(/\s+/g, ' ');
+                    const priceStr = (match[2] || '0').replace(/[.,]/g, m => m === ',' ? '.' : m);
+                    const price = parseFloat(priceStr);
+
+                    if (name.length > 2 && price > 0 && !products.some(p => p.name.toLowerCase() === name.toLowerCase())) {
+                        products.push({
+                            name: name.charAt(0).toUpperCase() + name.slice(1).toLowerCase(),
+                            price: Math.round(price * 100) / 100,
+                            qty: 1,
+                            subtotal: Math.round(price * 100) / 100
+                        });
                     }
                 }
             });
 
-            return products.slice(0, 15);
+            return products.slice(0, 25);
         }
 
         function displayProducts(storeId, products) {
